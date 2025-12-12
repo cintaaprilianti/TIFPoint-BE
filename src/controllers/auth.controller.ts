@@ -95,9 +95,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if user exists
+    // Cari user berdasarkan email
     const user = await db.user.findUnique({
-      where: { email }
+      where: { email },
     });
 
     if (!user) {
@@ -105,28 +105,59 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Compare password
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      res.status(400).json({ message: 'Invalid credentials' });
+    // A5 – Authentication: Cek apakah akun sedang terkunci
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const secondsLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000);
+      res.status(429).json({
+        message: `Terlalu banyak percobaan gagal. Akun terkunci ${secondsLeft} detik lagi.`,
+      });
       return;
     }
 
-    // Create JWT payload
+    // Cek password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      const attempts = (user.failedLoginAttempts || 0) + 1;
+      const updateData: any = { failedLoginAttempts: attempts };
+
+      // Kalau sudah salah 3 kali → kunci 30 detik
+      if (attempts >= 3) {
+        updateData.lockedUntil = new Date(Date.now() + 30_000); // 30 detik
+      }
+
+      await db.user.update({
+        where: { id: user.id },
+        data: updateData,
+      });
+
+      res.status(400).json({
+        message: 'Invalid credentials',
+        attemptsLeft: attempts >= 3 ? 0 : 3 - attempts,
+      });
+      return;
+    }
+
+    // Login berhasil → reset counter
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+
+    // Buat token
     const payload = {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role
+      role: user.role,
     };
 
-    // Sign token - perbaiki tipe data
-const token = jwt.sign(
-  payload,
-  config.jwtSecret as Secret,
-  { expiresIn: config.jwtExpiresIn as any }
-);
+    const token = jwt.sign(payload, config.jwtSecret as Secret, {
+      expiresIn: config.jwtExpiresIn as any,
+    });
 
     res.json({
       message: 'Login successful',
@@ -137,8 +168,8 @@ const token = jwt.sign(
         email: user.email,
         name: user.name,
         nim: user.nim,
-        role: user.role
-      }
+        role: user.role,
+      },
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -387,6 +418,3 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ message: 'Server error' });
   }
 };
-
-
-

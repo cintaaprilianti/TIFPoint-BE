@@ -11,19 +11,25 @@ datasource db {
 }
 
 model User {
-  id                 String      @id @default(cuid())
-  username           String      @unique
-  email              String      @unique
-  password           String
-  nim                String?     @unique
-  name               String      
-  role               Role        @default(MAHASISWA)
-  resetPasswordToken String?     @unique
+  id                   String    @id @default(cuid())
+  username             String    @unique
+  email                String    @unique
+  password             String
+  nim                  String?   @unique
+  name                 String
+  role                 Role      @default(MAHASISWA)
+  resetPasswordToken   String?   @unique
   resetPasswordExpires DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-  activities         Activity[]
-  verifiedActivities Activity[]  @relation("VerifiedActivities")
+
+  // AUTHENTICATION (BRUTE-FORCE PROTECTION)
+  failedLoginAttempts  Int       @default(0)
+  lockedUntil          DateTime?
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  activities           Activity[]
+  verifiedActivities   Activity[] @relation("VerifiedActivities")
 }
 
 enum Role {

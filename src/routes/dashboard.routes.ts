@@ -1,20 +1,21 @@
 import express from 'express';
 import {
-    getActivityStatistics,
-    getAdminDashboard,
-    getLeaderboard,
-    getStudentDashboard,
-    getStudentRecommendations,
-    getStudentStatistics
+  getActivityStatistics,
+  getAdminDashboard,
+  getLeaderboard,
+  getStudentDashboard,
+  getStudentRecommendations,
+  getStudentStatistics,
 } from '../controllers/dashboard.controller';
 import { adminOnly, auth } from '../middleware/auth';
+import { studentOnly } from '../middleware/roleGuard'; // pastikan path benar
 
 const router = express.Router();
 
-// Student dashboard (protected - only for authenticated students)
-router.get('/student', auth, getStudentDashboard);
+// HANYA MAHASISWA
+router.get('/student', auth, studentOnly, getStudentDashboard);
 
-// Admin dashboard (admin only)
+// HANYA ADMIN
 router.get('/admin', auth, adminOnly, getAdminDashboard);
 
 // Get detailed student statistics (admin only)
