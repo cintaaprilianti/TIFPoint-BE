@@ -86,6 +86,15 @@ app.get('/', (req, res) => {
   res.json({ message: 'Welcome to TIFPoint API' });
 });
 
+// =============================
+// 404 HANDLER
+// =============================
+app.use((req, res) => {
+  res.status(404).json({
+    message: "Halaman tidak ditemukan"
+  });
+});
+
 // Start server
 const PORT = config.port;
 app.listen(PORT, () => {

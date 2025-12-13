@@ -30,6 +30,8 @@ model User {
 
   activities           Activity[]
   verifiedActivities   Activity[] @relation("VerifiedActivities")
+
+  activityLogs         ActivityLog[]
 }
 
 enum Role {
@@ -109,4 +111,18 @@ model Event {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   activities  Activity[]
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?  
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   
+  description String?  
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
 }

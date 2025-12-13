@@ -4,7 +4,6 @@ import cloudinary from '../utils/cloudinary';
 import { validatePointAssignment } from '../utils/pointCalculation';
 import prisma from '../utils/prisma';
 
-// Type assertion to fix Prisma TypeScript issues
 const db = prisma as any;
 
 export const getAllActivities = async (req: Request, res: Response) => {
@@ -12,7 +11,6 @@ export const getAllActivities = async (req: Request, res: Response) => {
     const userId = (req as RequestWithUser).user?.id;
     const isAdmin = (req as RequestWithUser).user?.role === 'ADMIN';
 
-    // If admin, get all activities, otherwise only user's activities
     const activities = await db.activity.findMany({
       where: isAdmin ? {} : { userId },
       include: {
@@ -84,7 +82,6 @@ export const getActivityById = async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if auth user is admin or activity owner
     if (activity.userId !== userId && !isAdmin) {
       res.status(403).json({ message: 'Unauthorized access to this activity' });
       return;
@@ -111,19 +108,16 @@ export const createActivity = async (req: Request, res: Response) => {
       eventId
     } = req.body;
 
-    // Validation
     if (!title || !competencyId || !activityTypeId || !documentUrl) {
       res.status(400).json({ message: 'Required fields are missing' });
       return;
     }
 
-    // Additional validation for empty strings
     if (title.trim() === '') {
       res.status(400).json({ message: 'Title cannot be empty' });
       return;
     }
 
-    // Verify competency exists
     const competencyExists = await db.competency.findUnique({
       where: { id: competencyId }
     });
@@ -133,7 +127,6 @@ export const createActivity = async (req: Request, res: Response) => {
       return;
     }
 
-    // Verify activity type exists
     const activityTypeExists = await db.activityType.findUnique({
       where: { id: activityTypeId }
     });
@@ -143,7 +136,6 @@ export const createActivity = async (req: Request, res: Response) => {
       return;
     }
 
-    // Verify recognized course exists (if provided)
     if (recognizedCourseId) {
       const courseExists = await db.recognizedCourse.findUnique({
         where: { id: recognizedCourseId }
@@ -155,7 +147,6 @@ export const createActivity = async (req: Request, res: Response) => {
       }
     }
 
-    // Verify event exists (if provided)
     if (eventId) {
       const eventExists = await db.event.findUnique({
         where: { id: eventId }
@@ -167,7 +158,6 @@ export const createActivity = async (req: Request, res: Response) => {
       }
     }
 
-    // Create activity
     const activity = await db.activity.create({
       data: {
         title,
@@ -189,7 +179,6 @@ export const createActivity = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Create activity error:', error);
 
-    // Handle specific Prisma errors
     if (error.code === 'P2002') {
       res.status(400).json({ message: 'Duplicate entry detected' });
       return;
@@ -225,7 +214,6 @@ export const updateActivity = async (req: Request, res: Response) => {
       eventId
     } = req.body;
 
-    // Check if activity exists
     const activity = await db.activity.findUnique({
       where: { id }
     });
@@ -235,19 +223,16 @@ export const updateActivity = async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if auth user is admin or activity owner
     if (activity.userId !== userId && !isAdmin) {
       res.status(403).json({ message: 'Unauthorized to update this activity' });
       return;
     }
 
-    // If owner tries to update after approved/rejected, prevent it
     if (!isAdmin && activity.status !== 'PENDING') {
       res.status(403).json({ message: 'Cannot update a processed activity' });
       return;
     }
 
-    // Update activity
     const updatedActivity = await db.activity.update({
       where: { id },
       data: {
@@ -278,7 +263,6 @@ export const deleteActivity = async (req: Request, res: Response) => {
     const userId = (req as RequestWithUser).user?.id;
     const isAdmin = (req as RequestWithUser).user?.role === 'ADMIN';
 
-    // Check if activity exists
     const activity = await db.activity.findUnique({
       where: { id }
     });
@@ -288,29 +272,24 @@ export const deleteActivity = async (req: Request, res: Response) => {
       return;
     }
 
-    // Check if auth user is admin or activity owner
     if (activity.userId !== userId && !isAdmin) {
       res.status(403).json({ message: 'Unauthorized to delete this activity' });
       return;
     }
 
-    // If owner tries to delete after approved/rejected, prevent it
     if (!isAdmin && activity.status !== 'PENDING') {
       res.status(403).json({ message: 'Cannot delete a processed activity' });
       return;
     }
 
-    // Delete from Cloudinary if publicId exists
     if (activity.documentPublicId) {
       try {
         await cloudinary.uploader.destroy(activity.documentPublicId);
       } catch (cloudinaryError) {
         console.error('Error deleting from Cloudinary:', cloudinaryError);
-        // Continue with deletion even if Cloudinary fails
       }
     }
 
-    // Delete activity
     await db.activity.delete({
       where: { id }
     });
@@ -328,13 +307,11 @@ export const verifyActivity = async (req: Request, res: Response) => {
     const adminId = (req as RequestWithUser).user?.id;
     const { status, point, comment } = req.body;
 
-    // Validation
     if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
       res.status(400).json({ message: 'Valid status (APPROVED or REJECTED) is required' });
       return;
     }
 
-    // Check if activity exists
     const activity = await db.activity.findUnique({
       where: { id }
     });
@@ -344,7 +321,6 @@ export const verifyActivity = async (req: Request, res: Response) => {
       return;
     }
 
-    // Update activity with verification details
     const updatedActivity = await db.activity.update({
       where: { id },
       data: {
@@ -366,37 +342,30 @@ export const verifyActivity = async (req: Request, res: Response) => {
   }
 };
 
-// Get activities with filtering and pagination
 export const getActivitiesWithFilter = async (req: Request, res: Response) => {
   try {
     const userId = (req as RequestWithUser).user?.id;
     const isAdmin = (req as RequestWithUser).user?.role === 'ADMIN';
     const { status, competencyId, activityTypeId, nim, page = 1, limit = 10 } = req.query;
 
-    // Build where clause
     const whereClause: any = {};
 
-    // If not admin, only show user's activities
     if (!isAdmin) {
       whereClause.userId = userId;
     }
 
-    // Filter by status
     if (status) {
       whereClause.status = status as string;
     }
 
-    // Filter by competency
     if (competencyId) {
       whereClause.competencyId = competencyId as string;
     }
 
-    // Filter by activity type
     if (activityTypeId) {
       whereClause.activityTypeId = activityTypeId as string;
     }
 
-    // Filter by NIM (admin only)
     if (nim && isAdmin) {
       whereClause.user = {
         nim: {
@@ -406,12 +375,10 @@ export const getActivitiesWithFilter = async (req: Request, res: Response) => {
       };
     }
 
-    // Calculate pagination
     const pageNumber = parseInt(page as string);
     const limitNumber = parseInt(limit as string);
     const skip = (pageNumber - 1) * limitNumber;
 
-    // Get activities with pagination
     const [activities, totalCount] = await Promise.all([
       db.activity.findMany({
         where: whereClause,
@@ -463,7 +430,6 @@ export const getActivitiesWithFilter = async (req: Request, res: Response) => {
   }
 };
 
-// Validate point assignment (admin only)
 export const validatePoints = async (req: Request, res: Response) => {
   try {
     const { activityTypeId, competencyId, points } = req.body;
