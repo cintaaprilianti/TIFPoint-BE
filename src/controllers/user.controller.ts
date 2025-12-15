@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
+import { logActivity } from '../utils/logger';
 
 // Type assertion to fix Prisma TypeScript issues
 const db = prisma as any;
@@ -159,6 +160,9 @@ export const updateUser = async (req: Request, res: Response) => {
       message: 'User updated successfully',
       user: updatedUser
     });
+
+    // Log user update (fire-and-forget)
+    logActivity((req as any).user?.id, 'UPDATE_USER', `Updated user ${updatedUser.id}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Update user error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -192,6 +196,9 @@ export const deleteUser = async (req: Request, res: Response) => {
     });
 
     res.json({ message: 'User deleted successfully' });
+
+    // Log user deletion (fire-and-forget)
+    logActivity((req as any).user?.id, 'DELETE_USER', `Deleted user ${id}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Delete user error:', error);
     res.status(500).json({ message: 'Server error' });

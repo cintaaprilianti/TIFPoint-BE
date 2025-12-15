@@ -5,21 +5,19 @@ import jwt, { Secret } from 'jsonwebtoken';
 import config from '../config';
 import emailService from '../utils/emailService';
 import prisma from '../utils/prisma';
+import { logActivity } from '../utils/logger';
 
-// Type assertion to fix Prisma TypeScript issues
 const db = prisma as any;
 
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, email, password, name, nim } = req.body;
 
-    // Validation
     if (!username || !email || !password || !name) {
       res.status(400).json({ message: 'All fields are required' });
       return;
     }
 
-    // Check if email exists
     const existingEmail = await db.user.findUnique({
       where: { email }
     });
@@ -29,7 +27,6 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if username exists
     const existingUsername = await db.user.findUnique({
       where: { username }
     });
@@ -39,7 +36,6 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if NIM exists (if provided)
     if (nim) {
       const existingNim = await db.user.findUnique({
         where: { nim }
@@ -51,10 +47,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       }
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const user = await db.user.create({
       data: {
         username,
@@ -79,6 +73,10 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       message: 'User registered successfully',
       user
     });
+ 
+    console.log('auth.controller: logging CREATE_USER for', user.id);
+   
+    logActivity(user.id, 'CREATE_USER', 'User registered', req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -89,39 +87,36 @@ export const login = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
       res.status(400).json({ message: 'Please provide email and password' });
       return;
     }
 
-    // Cari user berdasarkan email
     const user = await db.user.findUnique({
       where: { email },
     });
 
     if (!user) {
+      await logActivity(null, 'LOGIN_FAILED', `Login attempt with unknown email: ${email}`, req);
       res.status(400).json({ message: 'Invalid credentials' });
       return;
     }
 
-    // A5 – Authentication: Cek apakah akun sedang terkunci
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const secondsLeft = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 1000);
+      await logActivity(user.id, 'ACCOUNT_LOCKED', `Account locked for ${secondsLeft} seconds`, req);
       res.status(429).json({
         message: `Terlalu banyak percobaan gagal. Akun terkunci ${secondsLeft} detik lagi.`,
       });
       return;
     }
 
-    // Cek password
     const isMatch = await bcrypt.compare(password, user.password);
 
     if (!isMatch) {
       const attempts = (user.failedLoginAttempts || 0) + 1;
       const updateData: any = { failedLoginAttempts: attempts };
 
-      // Kalau sudah salah 3 kali → kunci 30 detik
       if (attempts >= 3) {
         updateData.lockedUntil = new Date(Date.now() + 30_000); // 30 detik
       }
@@ -131,6 +126,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         data: updateData,
       });
 
+      await logActivity(user.id, 'LOGIN_FAILED', 'Incorrect password', req);
+
       res.status(400).json({
         message: 'Invalid credentials',
         attemptsLeft: attempts >= 3 ? 0 : 3 - attempts,
@@ -138,7 +135,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Login berhasil → reset counter
     await db.user.update({
       where: { id: user.id },
       data: {
@@ -147,7 +143,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       },
     });
 
-    // Buat token
     const payload = {
       id: user.id,
       username: user.username,
@@ -171,6 +166,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         role: user.role,
       },
     });
+    
+    console.log('auth.controller: logging LOGIN_SUCCESS for', user.id);
+
+    logActivity(user.id, 'LOGIN_SUCCESS', 'User logged in', req).catch((e) => console.error('logActivity error', e));
+
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -179,7 +179,6 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Gunakan any untuk mengakses property user yang ditambahkan oleh middleware
     const userId = (req as any).user?.id;
 
     if (!userId) {
@@ -205,7 +204,6 @@ export const getProfile = async (req: Request, res: Response): Promise<void> => 
       return;
     }
 
-    // If user is a student, include point statistics
     if (user.role === 'MAHASISWA') {
       const approvedActivities = await db.activity.findMany({
         where: {
@@ -250,28 +248,23 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    // Check if user exists
     const user = await db.user.findUnique({
       where: { email }
     });
 
     if (!user) {
-      // For security reasons, don't reveal that the email doesn't exist
       res.status(200).json({ message: 'If your email is registered, you will receive a password reset link' });
       return;
     }
 
-    // Generate reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetPasswordToken = crypto
       .createHash('sha256')
       .update(resetToken)
       .digest('hex');
 
-    // Set token expiry (1 hour from now)
     const resetPasswordExpires = new Date(Date.now() + 3600000);
 
-    // Save token to database
     await db.user.update({
       where: { id: user.id },
       data: {
@@ -280,9 +273,7 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
       }
     });
 
-    // Send password reset email
     try {
-      // Check if email service is configured
       const isEmailConfigured = process.env.EMAIL_USER &&
                                 process.env.EMAIL_PASSWORD &&
                                 process.env.EMAIL_USER !== 'your-brevo-email@domain.com' &&
@@ -331,7 +322,6 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
     } catch (emailError: any) {
       console.error('❌ Email service error:', emailError);
 
-      // Always provide fallback token for development
       res.status(200).json({
         message: 'Email service error. Here is your reset token for development:',
         resetToken,
@@ -345,12 +335,10 @@ export const forgotPassword = async (req: Request, res: Response): Promise<void>
   }
 };
 
-// Reset Password with Token
 export const resetPassword = async (req: Request, res: Response): Promise<void> => {
   try {
     const { token, newPassword } = req.body;
 
-    // Validate input
     if (!token || !newPassword) {
       res.status(400).json({
         message: 'Token and new password are required'
@@ -358,7 +346,6 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Validate password strength
     if (newPassword.length < 6) {
       res.status(400).json({
         message: 'Password must be at least 6 characters long'
@@ -366,7 +353,6 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Hash the token to compare with database
     const hashedToken = crypto
       .createHash('sha256')
       .update(token)
@@ -374,12 +360,11 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     console.log(`🔍 Looking for user with reset token...`);
 
-    // Find user with valid reset token
     const user = await db.user.findFirst({
       where: {
         resetPasswordToken: hashedToken,
         resetPasswordExpires: {
-          gt: new Date() // Token not expired
+          gt: new Date() 
         }
       }
     });
@@ -394,10 +379,8 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     console.log(`✅ Valid token found for user: ${user.email}`);
 
-    // Hash new password
     const hashedPassword = await bcrypt.hash(newPassword, 12);
 
-    // Update user password and clear reset token
     await db.user.update({
       where: { id: user.id },
       data: {

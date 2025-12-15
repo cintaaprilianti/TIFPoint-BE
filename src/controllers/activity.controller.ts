@@ -3,6 +3,7 @@ import { RequestWithUser } from '../types';
 import cloudinary from '../utils/cloudinary';
 import { validatePointAssignment } from '../utils/pointCalculation';
 import prisma from '../utils/prisma';
+import { logActivity } from '../utils/logger';
 
 const db = prisma as any;
 
@@ -172,6 +173,10 @@ export const createActivity = async (req: Request, res: Response) => {
       }
     });
 
+    console.log('activity.controller: logging SUBMIT_ACTIVITY for', userId);
+  
+    logActivity(userId, 'SUBMIT_ACTIVITY', `Submitted activity ${activity.id}: ${activity.title}`, req).catch((e) => console.error('logActivity error', e));
+
     res.status(201).json({
       message: 'Activity created successfully',
       activity
@@ -251,6 +256,10 @@ export const updateActivity = async (req: Request, res: Response) => {
       message: 'Activity updated successfully',
       activity: updatedActivity
     });
+
+    console.log('activity.controller: logging UPDATE_ACTIVITY for', (req as any).user?.id);
+
+    logActivity((req as any).user?.id, 'UPDATE_ACTIVITY', `Updated activity ${updatedActivity.id}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Update activity error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -295,6 +304,10 @@ export const deleteActivity = async (req: Request, res: Response) => {
     });
 
     res.json({ message: 'Activity deleted successfully' });
+    // Log activity deletion
+    console.log('activity.controller: logging DELETE_ACTIVITY for', (req as any).user?.id);
+    // Fire-and-forget
+    logActivity((req as any).user?.id, 'DELETE_ACTIVITY', `Deleted activity ${id}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Delete activity error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -331,6 +344,11 @@ export const verifyActivity = async (req: Request, res: Response) => {
         verifiedAt: new Date()
       }
     });
+
+    // Log verification
+    console.log('activity.controller: logging VERIFY_ACTIVITY for', adminId, status);
+    // Fire-and-forget
+    logActivity(adminId, 'VERIFY_ACTIVITY', `Activity ${id} ${status}`, req).catch((e) => console.error('logActivity error', e));
 
     res.json({
       message: `Activity ${status.toLowerCase()} successfully`,

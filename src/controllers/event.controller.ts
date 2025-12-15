@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../utils/prisma';
+import { logActivity } from '../utils/logger';
 
 export const getAllEvents = async (req: Request, res: Response) => {
   try {
@@ -61,6 +62,8 @@ export const createEvent = async (req: Request, res: Response) => {
       message: 'Event created successfully',
       event
     });
+    // Log event creation (fire-and-forget)
+    logActivity((req as any).user?.id, 'CREATE_EVENT', `Created event ${event.id} - ${event.title}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Create event error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -98,6 +101,8 @@ export const updateEvent = async (req: Request, res: Response) => {
       message: 'Event updated successfully',
       event: updatedEvent
     });
+    // Log event update (fire-and-forget)
+    logActivity((req as any).user?.id, 'UPDATE_EVENT', `Updated event ${updatedEvent.id}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Update event error:', error);
     res.status(500).json({ message: 'Server error' });
@@ -124,6 +129,8 @@ export const deleteEvent = async (req: Request, res: Response) => {
     });
 
     res.json({ message: 'Event deleted successfully' });
+    // Log event deletion (fire-and-forget)
+    logActivity((req as any).user?.id, 'DELETE_EVENT', `Deleted event ${id}`, req).catch((e) => console.error('logActivity error', e));
   } catch (error) {
     console.error('Delete event error:', error);
     res.status(500).json({ message: 'Server error' });

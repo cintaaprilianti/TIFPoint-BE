@@ -1,24 +1,33 @@
-// src/utils/logger.ts → BUAT FILE BARU!
-
+import { Request } from 'express';
 import prisma from './prisma';
 
-export const logActivity = async (
-  userId: string | null,
+export async function logActivity(
+  userId: string | null | undefined,
   action: string,
   description?: string,
-  req?: any
-) => {
+  req?: Request
+) {
+  console.log('logActivity called:', { userId, action, description });
   try {
+    const ipAddress =
+      (req && (req.headers['x-forwarded-for'] as string)) ||
+      (req && (req.socket?.remoteAddress || (req as any).ip)) ||
+      null;
+
+    const userAgent = req?.headers['user-agent'] as string | undefined;
+
     await prisma.activityLog.create({
       data: {
-        userId,
+        userId: userId || null,
         action,
         description: description || null,
-        ipAddress: req?.ip || req?.connection?.remoteAddress || null,
-        userAgent: req?.get('User-Agent') || null,
+        ipAddress: ipAddress || null,
+        userAgent: userAgent || null
       }
     });
   } catch (error) {
-    console.error('Failed to log activity:', error);
+    console.error('Failed to write activity log:', error);
   }
-};
+}
+
+export default { logActivity };
